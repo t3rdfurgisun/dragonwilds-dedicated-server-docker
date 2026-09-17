@@ -1,0 +1,17 @@
+services:
+  dragonwilds:
+    build: .
+    image: dragonwilds-server:manual-update
+    container_name: dragonwilds-server
+    init: true          # reaps orphaned child processes (see README troubleshooting)
+    network_mode: host   # see README "Networking" section before changing this
+    restart: unless-stopped
+    environment:
+      DEFAULT_PORT: "7777"
+    volumes:
+      - ./data:/home/dragonwilds/rs_server
+    # NOTE: with network_mode: host there is no `ports:` section - the
+    # container shares the host's network stack directly. If you switch to
+    # bridge networking instead, remove `network_mode: host` above and add:
+    #   ports:
+    #     - "7777:7777/udp"

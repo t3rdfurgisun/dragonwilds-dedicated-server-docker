@@ -1,0 +1,22 @@
+# Local bind-mounted server data - game files, world saves, and generated
+# configs (DedicatedServer.ini has your OwnerId / WorldPassword in it).
+# Never commit these.
+data/
+*/data/
+**/RSDragonwilds/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor junk
+.vscode/
+*.swp
+*~
+
+# Local env overrides
+.env
+*.env
+
+# Logs
+*.log
