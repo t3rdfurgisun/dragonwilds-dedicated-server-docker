@@ -2,15 +2,15 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A minimal, fully auditable Docker build for a self-hosted **RuneScape: Dragonwilds**
-dedicated server (Steam app ID `4019830`), built for Linux hosts and tested with
-Nintendo Switch 2 / crossplay clients.
+A small Docker build for a self-hosted **RuneScape: Dragonwilds** dedicated
+server (Steam app ID `4019830`), for Linux hosts, tested with Nintendo
+Switch 2 / crossplay clients.
 
-This isn't a fork of an existing image - it's a from-scratch `debian:bookworm-slim`
-build with 32-bit SteamCMD compat libs, running as a non-root user. It exists
-because a few real bugs in the SteamCMD/Dragonwilds install path aren't
-documented anywhere else right now (see **Known issues** below), and a
-from-scratch Dockerfile is just easier to trust than an opaque pre-built
+Built from scratch on `debian:bookworm-slim` rather than forked from an
+existing image: 32-bit SteamCMD compat libs, running as a non-root user. It
+exists because a few real bugs in the SteamCMD/Dragonwilds install path
+aren't documented anywhere else right now (see **Known issues** below), and
+a Dockerfile you can read top to bottom is easier to trust than a pre-built
 image for something sitting on your home network.
 
 ## Two variants - pick one
@@ -19,14 +19,24 @@ image for something sitting on your home network.
 |---|---|---|
 | Checks for game updates on every start | No | Yes |
 | Update trigger | You run it explicitly | Automatic |
-| Best for | Switch/console players using the join-code workaround (see below) | PC players who don't rely on a stable join code |
+| Best for | Console players, especially Switch | PC players on Steam |
 
-**Why this matters:** every server restart regenerates the session's
-`JoinCode`. If your only reliable way to connect is the join-code workaround
-(common on Switch 2 right now - see below), an auto-updating server that
-restarts itself on a schedule will silently strand you with a stale code.
-`manual-update` never restarts itself; you control exactly when the code
-changes.
+If you play on console, use `manual-update`. Console client patches land
+days to weeks behind the Steam build - so a server that updates itself the
+moment Jagex ships something will jump to a version your Switch can't talk
+to yet, and you're locked out of your own world until Nintendo pushes the
+patch. `manual-update` only updates when you tell it to, so you can hold the
+server back until your client catches up.
+
+Second reason, smaller: every server restart regenerates the session's
+`JoinCode`. If you end up leaning on join-by-code to get in (see the Switch
+notes below), an update on startup means a new code every time.
+
+Neither image restarts on a timer. `auto-update` re-checks with SteamCMD
+every time the container starts; `manual-update` doesn't. Both use
+`restart: unless-stopped`, so Docker will bring the server back after a
+crash or a host reboot - on `manual-update` that restart won't change your
+game version, but it will rotate the join code.
 
 ## Requirements
 
@@ -40,6 +50,11 @@ changes.
 ```bash
 git clone <this-repo-url>
 cd dragonwilds-dedicated-server-docker/manual-update   # or auto-update/
+
+# The container runs as UID 1000. Docker would otherwise create ./data as
+# root and SteamCMD would fail with permission denied on first run.
+mkdir -p data && sudo chown 1000:1000 data
+
 docker compose up -d --build
 docker compose logs -f
 ```
@@ -58,24 +73,24 @@ docker compose up -d
 
 ## Finding your join code
 
-If your client can't search for the server by name (see the Switch keyboard
-bug below), Dragonwilds dedicated servers log a session join code on startup:
+The server logs a session join code on startup. Handy as a fallback if your
+client isn't finding the server by name:
 
 ```bash
 docker compose logs dragonwilds | grep -i joincode
 ```
 
-Enter that code in your client's "join by code" option instead of searching
-by name. Re-run this after any restart/update - the code changes each time
-the server session restarts.
+Enter that code in your client's "join by code" option. Re-run the command
+after any restart or update - the code changes each time the server session
+restarts.
 
 ## Configuration
 
 The dedicated server only reads one config file, generated on first run at
 `RSDragonwilds/Saved/Config/LinuxServer/DedicatedServer.ini` inside the
-volume. This is the **complete, ground-truth key list** - confirmed by
-reading the actual generated file, not third-party doc summaries (several of
-which incorrectly list `AdminPassword` as a required key - it doesn't exist):
+volume. This is the full key list, read off the file the server actually
+generates rather than copied from third-party docs (several of which list
+`AdminPassword` as a required key - there's no such key):
 
 ```ini
 [/Script/Dominion.DedicatedServerSettings]
@@ -94,8 +109,8 @@ and `Engine.ini` (also auto-generated) are purely client-side
 rendering/accessibility and engine content-mount settings respectively -
 irrelevant to gameplay.
 
-**World type (Standard/Custom/Creative):** this is *not* a config file
-setting. It's chosen when the world is first created - either in a PC/Steam
+**World type (Standard/Custom/Creative):** set when the world is first
+created, not in any config file - either in a PC/Steam
 client (with the resulting `.sav` copied onto the server) or, if left to
 auto-generate as this build does, it defaults to **Standard**. If you're
 Switch-only with no Steam install, you're stuck with Standard unless someone
@@ -134,9 +149,16 @@ Either way, you'll also need:
 
 ## Switch 2 connectivity notes
 
-- The in-game server-name search field's on-screen keyboard doesn't appear
-  on Switch 2 (confirmed on the 1.0 build) - you can't type a search query.
-  Use the join-code option instead (see above).
+These are things I hit on my own Switch 2, not confirmed bugs or official
+fixes - just what's worked for me:
+
+- The on-screen keyboard didn't come up for me in the server-name search
+  field, so I couldn't type a query to search by name.
+- Saving/favoriting my own server doesn't seem to stick. What works instead
+  is sitting on the Recent tab for a bit - it usually shows up after 10-20
+  seconds and I join from there.
+- When it hasn't shown up, join-by-code got me in (see above). I've only
+  needed that twice; the Recent tab has been enough the rest of the time.
 - If you're playing over a cloud-streaming client (e.g. GeForce Now), it
   reaches your server over the public internet like any remote player,
   regardless of being on the same Wi-Fi network as your server. Treat it as
@@ -163,7 +185,9 @@ Either way, you'll also need:
 ## Still open / not handled by this repo
 
 - Auto-restart on container/host reboot uses `restart: unless-stopped` -
-  make sure your Docker daemon itself starts on boot.
+  make sure your Docker daemon itself starts on boot. Compose sets
+  `stop_grace_period: 60s` so the server has time to write the world save
+  before Docker kills it; don't lower that.
 - No backup automation for world saves - back up your bind-mounted `data/`
   directory yourself.
 - The bridge-vs-host networking question above hasn't been re-tested since
